@@ -1,0 +1,5 @@
+Email,Parent Email,Student ID,Full Name,Grade Level,Counselor Email,Graduation Year,Owl Rubric Score
+ava.chen@example.edu,ava.parent@example.com,CSA-1001,Ava Chen,12,lee.counselor@example.edu,2027,13
+mateo.rivera@example.edu,mateo.parent@example.com,CSA-1002,Mateo Rivera,11,patel.counselor@example.edu,2028,12
+sofia.williams@example.edu,sofia.parent@example.com,CSA-1003,Sofia Williams,10,lee.counselor@example.edu,2029,9
+noah.johnson@example.edu,noah.parent@example.com,CSA-1004,Noah Johnson,9,patel.counselor@example.edu,2030,8

@@ -1,0 +1,2 @@
+Recipient Email,Parent Email,Student Email,Student Name,Student ID,Grade,Service Pin,Total Hours,Award Message,Counselor Email
+parent@example.com,parent@example.com,student@example.edu,Example Student,CSA-0001,10,Bronze,12.5,"Paste or edit the award message here. Replace [Name] with the student's name.",counselor@example.edu

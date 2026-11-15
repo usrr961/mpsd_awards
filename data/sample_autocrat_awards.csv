@@ -1,0 +1,4 @@
+Recipient Email,Parent Email,Student Email,Student Name,Student ID,Grade,Service Pin,Total Hours,Award Message,Counselor Email
+mateo.parent@example.com,mateo.parent@example.com,mateo.rivera@example.edu,Mateo Rivera,CSA-1002,11,Silver,22.0,"Congratulations, [Name]! You have earned a Service Award.",patel.counselor@example.edu
+sofia.parent@example.com,sofia.parent@example.com,sofia.williams@example.edu,Sofia Williams,CSA-1003,10,Bronze,11.0,"Congratulations, [Name]! You have earned a Service Award.",lee.counselor@example.edu
+noah.parent@example.com,noah.parent@example.com,noah.johnson@example.edu,Noah Johnson,CSA-1004,9,First Year,4.5,"Congratulations, [Name]! You have earned a Service Award.",patel.counselor@example.edu

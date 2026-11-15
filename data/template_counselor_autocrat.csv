@@ -1,0 +1,2 @@
+Counselor Email,Student ID,Student Name,Grade,Service Pin,Google Form URL,JWT,Request Status
+counselor@example.edu,CSA-0001,Example Student,10,Owl,https://docs.google.com/forms/d/e/example?entry=student,example.jwt.token,Pending

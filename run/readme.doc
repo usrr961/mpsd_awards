@@ -1,0 +1,64 @@
+MPS CSA Desktop Application
+===========================
+
+The launch files in this folder start the Community Service Awards desktop app.
+
+QUICK SETUP
+-----------
+Use "Setup CSA.command" on macOS or "Setup CSA.bat" on Windows. The setup
+file checks for Python 3, installs it through Homebrew or Windows Package
+Manager when available, creates the project virtual environment, and installs
+all requirements. It is safe to run again.
+
+MACOS
+-----
+1. Double-click "Setup CSA.command" in this run folder. If Homebrew is
+   available, it installs Python automatically when Python is missing.
+2. If Homebrew is not installed, install Python 3.9 or newer from
+   https://www.python.org/downloads/ and run the setup file again.
+3. To run setup manually, open Terminal and go to the project folder:
+
+   cd /path/to/CSA
+
+4. Create the virtual environment if setup was not used:
+
+   python3 -m venv .venv
+
+5. Install the application requirements if setup was not used:
+
+   .venv/bin/python -m pip install -r requirements.txt
+
+6. Double-click "Launch CSA.command" in this run folder.
+   You may need to right-click it and choose Open the first time.
+
+WINDOWS
+-------
+1. Double-click "Setup CSA.bat" in this run folder. If Windows Package
+   Manager (winget) is available, it installs Python automatically when
+   Python is missing.
+2. If winget is unavailable, install Python 3.9 or newer from
+   https://www.python.org/downloads/ with "Add Python to PATH" enabled, then
+   run the setup file again.
+3. To run setup manually, open Command Prompt and go to the project folder:
+
+   cd C:\path\to\CSA
+
+4. Create the virtual environment if setup was not used:
+
+   py -m venv .venv
+
+5. Install the application requirements if setup was not used:
+
+   .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+6. Double-click "Launch CSA.bat" in this run folder.
+
+DATA
+----
+The SQLite database is created in the project root as csa_database.db.
+CSV templates and sample files are in the project's data folder.
+Do not delete csa_database.db unless you intend to remove the stored data.
+
+The launcher files are in this folder, while the Python application files remain
+in the parent project folder. The launchers automatically change to that parent
+folder before starting the application.
