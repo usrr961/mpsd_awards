@@ -35,6 +35,7 @@ from importer import (
     active_graduation_years, import_counselor_form_responses, import_form_responses,
     import_student_directory, rollover_students,
 )
+from web_server import LANPortal, local_ip_addresses
 
 
 class GradeDialog(QDialog):
@@ -179,12 +180,17 @@ class CSADashboard(QMainWindow):
         self.summaries = []
         self.rubric_percentage = float(OWL_TOP_PERCENTAGE)
         self._launch_size_applied = False
+        self.portal = LANPortal()
         self._build_ui()
         available_height = QApplication.primaryScreen().availableGeometry().height()
         self._launch_height = min(DASHBOARD_DEFAULT_HEIGHT, max(300, available_height - 40))
         self.setMinimumHeight(self._launch_height)
         self.resize(DASHBOARD_DEFAULT_WIDTH, self._launch_height)
         self.refresh_all()
+        self._sync_timer = QTimer(self)
+        self._sync_timer.setInterval(2000)
+        self._sync_timer.timeout.connect(self.refresh_all)
+        self._sync_timer.start()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -294,6 +300,7 @@ class CSADashboard(QMainWindow):
         try:
             submission_count = session.query(Submission).delete(synchronize_session=False)
             pin_count = session.query(PinHistory).delete(synchronize_session=False)
+            session.query(AwardOverride).delete(synchronize_session=False)
             student_count = session.query(Student).delete(synchronize_session=False)
             session.commit()
         except Exception as error:
@@ -323,6 +330,7 @@ class CSADashboard(QMainWindow):
         try:
             session.query(Submission).delete(synchronize_session=False)
             session.query(PinHistory).delete(synchronize_session=False)
+            session.query(AwardOverride).delete(synchronize_session=False)
             session.query(Student).delete(synchronize_session=False)
             session.commit()
             roster_count = import_student_directory(roster_path, session=session)
@@ -342,8 +350,104 @@ class CSADashboard(QMainWindow):
     def show_web_resources(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("CSA Web Resources")
-        dialog.setMinimumWidth(620)
+        dialog.setMinimumWidth(700)
         layout = QVBoxLayout(dialog)
+
+        portal_group = QGroupBox("Shared Student Portal")
+        portal_layout = QVBoxLayout(portal_group)
+        description = QLabel("Start a shared web portal for devices connected to the same Wi-Fi network.")
+        description.setWordWrap(True)
+        portal_layout.addWidget(description)
+
+        portal_settings = QFormLayout()
+        portal_pin = QLineEdit(self.portal.pin)
+        portal_pin.setEchoMode(QLineEdit.EchoMode.Password)
+        portal_pin.setMaxLength(64)
+        portal_settings.addRow("Portal password", portal_pin)
+        portal_layout.addLayout(portal_settings)
+
+        link_row = QHBoxLayout()
+        portal_link = QLineEdit()
+        portal_link.setReadOnly(True)
+        copy_link = QPushButton("Copy Link")
+        copy_link.setEnabled(False)
+        link_row.addWidget(portal_link, 1)
+        link_row.addWidget(copy_link)
+        portal_layout.addLayout(link_row)
+
+        pin_row = QHBoxLayout()
+        portal_pin_display = QLineEdit()
+        portal_pin_display.setReadOnly(True)
+        copy_pin = QPushButton("Copy Password")
+        copy_pin.setEnabled(False)
+        pin_row.addWidget(portal_pin_display, 1)
+        pin_row.addWidget(copy_pin)
+        portal_layout.addLayout(pin_row)
+
+        portal_toggle = QPushButton("Stop Shared Portal" if self.portal.server else "Start Shared Portal")
+        portal_layout.addWidget(portal_toggle)
+
+        def update_portal_details():
+            if self.portal.server:
+                addresses = local_ip_addresses()
+                url = f"http://{addresses[0]}:{self.portal.port}" if addresses else f"http://localhost:{self.portal.port}"
+                portal_link.setText(url)
+                copy_link.setEnabled(True)
+                portal_pin_display.setText(self.portal.pin)
+                copy_pin.setEnabled(True)
+                portal_toggle.setText("Stop Shared Portal")
+            else:
+                portal_link.clear()
+                portal_link.setPlaceholderText("Start the portal to generate a link")
+                copy_link.setEnabled(False)
+                portal_pin_display.clear()
+                portal_pin_display.setPlaceholderText("Portal password")
+                copy_pin.setEnabled(False)
+                portal_toggle.setText("Start Shared Portal")
+
+        def save_pin():
+            try:
+                self.portal.set_pin(portal_pin.text())
+                if self.portal.server:
+                    update_portal_details()
+                return True
+            except ValueError as error:
+                QMessageBox.warning(dialog, "Portal Password", str(error))
+                return False
+
+        def toggle_from_modal():
+            portal_toggle.setEnabled(False)
+            try:
+                if self.portal.server:
+                    self.portal.stop()
+                else:
+                    if not save_pin():
+                        return
+                    self.portal.start()
+            except Exception as error:
+                QMessageBox.critical(dialog, "Shared Portal Error", str(error))
+            finally:
+                update_portal_details()
+                portal_toggle.setEnabled(True)
+
+        portal_toggle.clicked.connect(toggle_from_modal)
+        portal_pin.editingFinished.connect(save_pin)
+        copy_link.clicked.connect(lambda: QApplication.clipboard().setText(portal_link.text()))
+        copy_pin.clicked.connect(lambda: QApplication.clipboard().setText(portal_pin_display.text()))
+        update_portal_details()
+        layout.addWidget(portal_group)
+
+        export_group = QGroupBox("Desktop File Exports")
+        export_layout = QGridLayout(export_group)
+        export_layout.addWidget(self._button("Counselor Word + Excel", self.export_counselor_mail_merge), 0, 0)
+        export_layout.addWidget(self._button("Student Word + Excel", self.export_student_mail_merge), 0, 1)
+        export_layout.addWidget(self._button("Senior Word + Excel", self.export_senior_mail_merge), 0, 2)
+        export_layout.addWidget(self._button("Student Awards CSV", self.export_awards), 1, 0)
+        export_layout.addWidget(self._button("Counselor Autocrat CSV", self.export_counselor), 1, 1)
+        export_layout.addWidget(self._button("Owl Rubric CSV", self.export_rubric), 1, 2)
+        export_layout.addWidget(self._button("Pin History CSV", self.export_history), 2, 0)
+        layout.addWidget(export_group)
+
         layout.addWidget(QLabel("Open a configured CSA web resource:"))
         try:
             resources = json.loads(Path(WEB_RESOURCES_FILE).read_text(encoding="utf-8"))
@@ -415,7 +519,22 @@ class CSADashboard(QMainWindow):
             row.addWidget(widget)
         row.addWidget(self._button("Refresh", self.refresh_all))
         layout.addWidget(filters)
-        self.student_table = self._table(["Email", "Student ID", "Full Name", "Grade", "4-Year Hours", "Award", "Counselor Write-up"])
+        batch = QGroupBox("Batch Award Overrides")
+        batch_row = QHBoxLayout(batch)
+        batch_row.addWidget(self._button("Select Visible", lambda: self._overview_select_all(True)))
+        batch_row.addWidget(self._button("Clear Selection", lambda: self._overview_select_all(False)))
+        self.overview_standard_batch = QComboBox()
+        self.overview_standard_batch.addItems(["Keep/Calculated", "Reset Override", *AWARD_ORDER])
+        self.overview_owl_batch = QComboBox()
+        self.overview_owl_batch.addItems(["Keep Owl", "Award Owl", "Remove Owl"])
+        batch_row.addWidget(QLabel("Standard"))
+        batch_row.addWidget(self.overview_standard_batch)
+        batch_row.addWidget(QLabel("Owl"))
+        batch_row.addWidget(self.overview_owl_batch)
+        batch_row.addWidget(self._button("Apply to Selected", self.apply_overview_batch))
+        layout.addWidget(batch)
+        self.student_table = self._table(["Select", "Email", "Student ID", "Full Name", "Grade", "4-Year Hours", "Award", "Standard Override", "Owl Override", "Counselor Write-up"])
+        self.student_table.itemChanged.connect(self._overview_selection_changed)
         self.student_table.cellDoubleClicked.connect(self.show_student_detail)
         layout.addWidget(self.student_table)
         return tab
@@ -469,12 +588,7 @@ class CSADashboard(QMainWindow):
         simulation_layout.addWidget(self._button("Simulate, reserve overrides", self.simulate_owl_reserving_overrides))
         simulation_layout.addWidget(self._button("Simulate full slots", self.simulate_owl_full_slots))
         actions.addWidget(simulation_buttons, 0, 2)
-        actions.addWidget(self._button("Reset All Award Overrides", self.reset_all_award_overrides), 2, 2)
-        actions.addWidget(self._button("Export Awards Autocrat CSV", self.export_awards), 2, 0)
-        actions.addWidget(self._button("Send Student Awards", self.compose_student_awards), 2, 1)
-        actions.addWidget(self._button("Send Senior Awards", self.compose_senior_awards), 3, 2)
-        actions.addWidget(self._button("Export Owl Rubric Autocrat", self.export_rubric), 3, 0)
-        actions.addWidget(self._button("Edit Award Message", self.edit_message), 3, 1)
+        actions.addWidget(self._button("Reset All Award Overrides", self.reset_all_award_overrides), 1, 0, 1, 3)
         layout.addWidget(actions_section)
         filters = CollapsibleSection("Awarded This Year Filters", expanded=True)
         filter_grid = QGridLayout(filters.content)
@@ -625,11 +739,16 @@ class CSADashboard(QMainWindow):
                 continue
             row = self.student_table.rowCount()
             self.student_table.insertRow(row)
-            values = [student.email, student.student_id or "", student.full_name, student.grade_level or "",
+            values = ["", student.email, student.student_id or "", student.full_name, student.grade_level or "",
                       f"{summary['total_hours']:.1f}", award,
+                      summary.get("admin_award_override") or "Calculated",
+                      "Yes" if summary.get("admin_owl_override") else "No",
                       "Received" if self._writeup(student) else ("Pending" if award == "Owl" else "-")]
             for col, value in enumerate(values):
                 self.student_table.setItem(row, col, QTableWidgetItem(str(value)))
+            select = self.student_table.item(row, 0)
+            select.setFlags(select.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            select.setCheckState(Qt.CheckState.Unchecked)
             if award == "Owl" and not self._writeup(student):
                 for col in range(self.student_table.columnCount()):
                     self.student_table.item(row, col).setBackground(QColor("#fff2bf"))
@@ -679,18 +798,68 @@ class CSADashboard(QMainWindow):
         return [summary for summary in self.summaries if summary["current_pin"] == "Owl" and summary["student"].status == "ACTIVE"]
 
     def show_student_detail(self, row, _column):
-        email = self.student_table.item(row, 0).text()
+        email = self.student_table.item(row, 1).text()
         summary = next((item for item in self.summaries if item["student"].email == email), None)
         if summary is None:
             return
         student = summary["student"]
-        details = [f"{student.full_name} | {student.email}", f"ID: {student.student_id or '-'} | Grade: {student.grade_level or '-'} | Status: {student.status}",
-                   f"Cumulative hours: {summary['total_hours']:.1f}", f"Current award: {summary['current_pin'] or 'None'}", "", "Service history:"]
-        for year in summary["yearly"]:
-            details.append(f"{year['academic_year']}: {year['hours']:.1f} hours -> {year['pin']}")
-        details.append("\nSubmitted files:")
-        details.extend(f"{submission.school_year}: {submission.file_upload_url or '-'}" for submission in student.submissions)
-        QMessageBox.information(self, "Student Detail", "\n".join(details))
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Student Overview")
+        dialog.setMinimumWidth(560)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(f"<b>{student.full_name}</b> | {student.email}"))
+        layout.addWidget(QLabel(f"ID: {student.student_id or '-'} | Grade: {student.grade_level or '-'} | Status: {student.status}"))
+        layout.addWidget(QLabel(f"Cumulative hours: {summary['total_hours']:.1f} | Calculated/current award: {summary['award_label'] or 'None'}"))
+        layout.addWidget(QLabel("Award override"))
+        standard = QComboBox()
+        standard.addItem("Calculated/Reset", "")
+        for award in AWARD_ORDER:
+            standard.addItem(award, award)
+        current_standard = summary.get("admin_award_override") or ""
+        if current_standard:
+            standard.setCurrentIndex(max(0, standard.findData(current_standard)))
+        owl = QCheckBox("Award Owl pin")
+        owl.setChecked(bool(summary.get("admin_owl_override")))
+        layout.addWidget(standard)
+        layout.addWidget(owl)
+
+        def save_override():
+            session = SessionLocal()
+            try:
+                stored = session.query(Student).filter_by(email=email).one_or_none()
+                if stored is None:
+                    return
+                chosen_standard = standard.currentData()
+                chosen_owl = owl.isChecked()
+                override = session.query(AwardOverride).filter_by(student_id=stored.id).first()
+                if not chosen_standard and not chosen_owl:
+                    if override:
+                        session.delete(override)
+                    stored.admin_award_override = None
+                    stored.owl_override = None
+                    stored.owl_selected = False
+                else:
+                    if override is None:
+                        override = AwardOverride(student_id=stored.id, award=chosen_standard or "Owl")
+                        session.add(override)
+                    override.standard_award = chosen_standard or None
+                    override.owl_awarded = chosen_owl
+                    override.award = chosen_standard or "Owl"
+                    stored.admin_award_override = None
+                    stored.owl_override = True if chosen_owl else None
+                    stored.owl_selected = chosen_owl
+                session.commit()
+            finally:
+                session.close()
+            dialog.accept()
+            self.refresh_all()
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Close)
+        buttons.accepted.connect(save_override)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
 
     def _owl_rows(self, grades=None):
         eligible = [summary for summary in self.summaries if summary.get("hour_pin") == "Gold" and summary["student"].status == "ACTIVE"]
@@ -797,6 +966,7 @@ class CSADashboard(QMainWindow):
                         session.delete(stored_override)
                     student.admin_award_override = None
                     student.owl_override = None
+                    student.owl_selected = False
                     continue
                 existing_standard = stored_override.standard_award if stored_override else None
                 if stored_override and not existing_standard and stored_override.award in AWARD_ORDER:
@@ -811,10 +981,13 @@ class CSADashboard(QMainWindow):
                     if stored_override is None:
                         stored_override = AwardOverride(student_id=student.id, award=chosen_standard or "Owl")
                         session.add(stored_override)
-                    stored_override.standard_award = chosen_standard
+                    stored_override.standard_award = chosen_standard or None
                     stored_override.owl_awarded = chosen_owl
                     stored_override.award = chosen_standard or "Owl"
                 student.admin_award_override = None
+                student.owl_override = chosen_owl if owl_awarded is not None else None
+                if owl_awarded is not None:
+                    student.owl_selected = chosen_owl
                 session.commit()
         finally:
             session.close()
@@ -866,7 +1039,8 @@ class CSADashboard(QMainWindow):
         session = SessionLocal()
         try:
             session.query(AwardOverride).delete(synchronize_session=False)
-            session.query(Student).update({Student.admin_award_override: None, Student.owl_override: None},
+            session.query(Student).update({Student.admin_award_override: None, Student.owl_override: None,
+                                           Student.owl_selected: False},
                                           synchronize_session=False)
             session.commit()
         finally:
@@ -1263,6 +1437,75 @@ class CSADashboard(QMainWindow):
                                      "Received" if pin.owl_writeup else "Pending" if pin.pin_awarded == "Owl" else "-",
                                      "Yes" if pin.owl_requested else "No"])
         self.status.setText(f"Exported pin history CSV: {path}")
+
+    def closeEvent(self, event):
+        if self.portal.server:
+            self.portal.stop()
+        super().closeEvent(event)
+
+    def _overview_select_all(self, selected):
+        if not hasattr(self, "student_table"):
+            return
+        self.student_table.blockSignals(True)
+        for row in range(self.student_table.rowCount()):
+            self.student_table.item(row, 0).setCheckState(
+                Qt.CheckState.Checked if selected else Qt.CheckState.Unchecked)
+        self.student_table.blockSignals(False)
+
+    def _overview_selection_changed(self, _item):
+        return
+
+    def apply_overview_batch(self):
+        selected_ids = []
+        for row in range(self.student_table.rowCount()):
+            if self.student_table.item(row, 0).checkState() == Qt.CheckState.Checked:
+                selected_ids.append(self.student_table.item(row, 2).text())
+        if not selected_ids:
+            QMessageBox.information(self, "Batch Override", "Select at least one student.")
+            return
+        standard_choice = self.overview_standard_batch.currentText()
+        standard = "" if standard_choice in {"Keep/Calculated", "Reset Override"} else standard_choice
+        owl_choice = self.overview_owl_batch.currentText()
+        owl = None if owl_choice == "Keep Owl" else owl_choice == "Award Owl"
+        session = SessionLocal()
+        try:
+            students = session.query(Student).filter(Student.student_id.in_(selected_ids)).all()
+            for student in students:
+                override = session.query(AwardOverride).filter_by(student_id=student.id).first()
+                if standard_choice == "Reset Override":
+                    if override:
+                        session.delete(override)
+                    student.admin_award_override = None
+                    student.owl_override = None
+                    student.owl_selected = False
+                    continue
+                existing_owl = bool(override and (override.owl_awarded or override.award == "Owl"))
+                chosen_owl = existing_owl if owl is None else owl
+                existing_standard = (override.standard_award if override else None)
+                if override and existing_standard is None and override.award in AWARD_ORDER:
+                    existing_standard = override.award
+                chosen_standard = existing_standard if standard_choice == "Keep/Calculated" else standard
+                if not chosen_standard and not chosen_owl:
+                    if override:
+                        session.delete(override)
+                else:
+                    if override is None:
+                        override = AwardOverride(student_id=student.id, award=chosen_standard or "Owl")
+                        session.add(override)
+                    override.standard_award = chosen_standard or None
+                    override.owl_awarded = chosen_owl
+                    override.award = chosen_standard or "Owl"
+                student.admin_award_override = None
+                student.owl_override = True if chosen_owl else None
+                student.owl_selected = chosen_owl
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            QMessageBox.critical(self, "Batch Override", str(error))
+            return
+        finally:
+            session.close()
+        self.refresh_all()
 
 
 def run():
